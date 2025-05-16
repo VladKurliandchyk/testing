@@ -1,6 +1,7 @@
 """Cursor type detection functions"""
 import cv2
 import numpy as np
+import os
 
 
 def detect_prohibited(roi):
@@ -114,3 +115,110 @@ def detect_hand(roi):
     mask_hand = cv2.morphologyEx(mask_hand, cv2.MORPH_OPEN, hand_kernel)
     
     return cv2.countNonZero(mask_hand)
+
+
+def load_cursor_templates(templates_dir=None):
+    """
+    Load cursor template images from the templates directory.
+    
+    Args:
+        templates_dir: Directory containing cursor template images
+        
+    Returns:
+        dict: Dictionary of template images
+    """
+    templates = {}
+    
+    # Default templates directory if not provided
+    if templates_dir is None:
+        # Try to resolve from current file location
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        templates_dir = os.path.join(os.path.dirname(current_dir), "templates")
+    
+    if os.path.exists(templates_dir):
+        template_files = {
+            "RED_SWORD": "unfriendlyattack.png",
+            "PROHIBITED": "dead.png",
+            "HAND": "itempickup.png"
+        }
+        
+        for cursor_type, filename in template_files.items():
+            path = os.path.join(templates_dir, filename)
+            if os.path.exists(path):
+                templates[cursor_type] = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            else:
+                if os.path.exists(templates_dir):
+                    print(f"Template file not found: {path}")
+                
+    else:
+        print(f"Templates directory not found: {templates_dir}")
+                
+    return templates
+
+
+def detect_cursor_by_template(roi, templates):
+    """
+    Detect cursor by template matching.
+    
+    Args:
+        roi: Region of interest in BGR format
+        templates: Dictionary of template images
+        
+    Returns:
+        str: Cursor type with highest matching score
+    """
+    best_match = "NONE"
+    best_score = 0
+    
+    for cursor_type, template in templates.items():
+        if template is None:
+            continue
+            
+        # Convert template to grayscale if it has alpha channel
+        if template.shape[2] == 4:
+            # Use alpha channel as mask
+            template_rgb = template[:,:,:3]
+            template_mask = template[:,:,3]
+            template_gray = cv2.cvtColor(template_rgb, cv2.COLOR_BGR2GRAY)
+            
+            # Convert ROI to grayscale
+            roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            
+            # Resize template if needed
+            if template_gray.shape[0] > roi_gray.shape[0] or template_gray.shape[1] > roi_gray.shape[1]:
+                scale = min(roi_gray.shape[0] / template_gray.shape[0], 
+                           roi_gray.shape[1] / template_gray.shape[1])
+                new_size = (int(template_gray.shape[1] * scale), int(template_gray.shape[0] * scale))
+                template_gray = cv2.resize(template_gray, new_size)
+                template_mask = cv2.resize(template_mask, new_size)
+            
+            # Template matching
+            result = cv2.matchTemplate(roi_gray, template_gray, cv2.TM_CCOEFF_NORMED, mask=template_mask)
+        else:
+            # Convert to grayscale
+            template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+            roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            
+            # Resize template if needed
+            if template_gray.shape[0] > roi_gray.shape[0] or template_gray.shape[1] > roi_gray.shape[1]:
+                scale = min(roi_gray.shape[0] / template_gray.shape[0], 
+                           roi_gray.shape[1] / template_gray.shape[1])
+                new_size = (int(template_gray.shape[1] * scale), int(template_gray.shape[0] * scale))
+                template_gray = cv2.resize(template_gray, new_size)
+            
+            # Template matching
+            result = cv2.matchTemplate(roi_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+        
+        # Get best match
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        
+        if max_val > best_score:
+            best_score = max_val
+            best_match = cursor_type
+    
+    # Add threshold for more confidence
+    threshold = 0.6
+    if best_score < threshold:
+        return "NONE"
+        
+    return best_match

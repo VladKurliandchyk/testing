@@ -7,6 +7,11 @@ import win32gui
 from PIL import Image
 from mss import mss
 from collections import Counter
+import os
+import sys
+
+# Add parent directory to path to make imports work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from input_controller import (
     smooth_move as input_smooth_move, 
@@ -26,7 +31,8 @@ from utils import (
     CURSOR_UPDATE_INTERVAL,
     class_names
 )
-from cursor_detection import detect_cursor_state
+# Import the cursor detection modules from the cursor_detection package
+from cursor_detection.cursor_detection import detect_cursor_state, load_templates
 from detection.yolo_detector import YOLODetector
 
 
@@ -48,6 +54,10 @@ class BotThread(threading.Thread):
         self.target_cursor_state = None
         self.target_tracking_active = False
         self.cursor_tracking_thread = None
+        
+        # Load cursor templates at initialization
+        # Make sure to use the correct path to templates
+        load_templates()
         
     def is_in_dead_zone(self, cx, cy):
         now = time.time()
@@ -162,8 +172,9 @@ class BotThread(threading.Thread):
         
         if DEBUG: print(f"Cursor state at ({cx}, {cy}): {self.target_cursor_state} (samples: {cursor_samples})")
         
-        # Attack based on cursor state
+        # Handle different cursor states
         if self.target_cursor_state == "PROHIBITED":
+            # Target is dead or prohibited - add to prohibited zones
             if DEBUG and self.current_target:
                 print(f"Target {self.current_target.class_name} has prohibition symbol - adding to prohibited zones")
             self.prohibited_zones.append((cx, cy, time.time()))
@@ -171,6 +182,7 @@ class BotThread(threading.Thread):
             return False
             
         elif self.target_cursor_state == "HAND":
+            # Target is dead but has loot - click to pick up item
             click_mouse('left')
             time.sleep(0.2)
             if DEBUG and self.current_target:
@@ -179,24 +191,43 @@ class BotThread(threading.Thread):
             self.stop_cursor_tracking()
             return False
         
-        # For RED_SWORD or NONE cursor states, attack the target
-        click_mouse('left')
-        self.last_attack_time = time.time()
-        self.attack_count += 1
+        elif self.target_cursor_state == "RED_SWORD":
+            # Target is alive and attackable - continue attacking
+            click_mouse('left')
+            self.last_attack_time = time.time()
+            self.attack_count += 1
+            time.sleep(0.1)
+            return True
         
-        time.sleep(0.1)
-        
-        # Check cursor state again after attack
-        new_cursor_state = self.get_current_cursor_state(cx, cy)
-        if DEBUG: print(f"Cursor state after attack: {new_cursor_state}")
-        
-        if new_cursor_state in ["HAND", "PROHIBITED"]:
-            if DEBUG: print(f"Cursor changed to {new_cursor_state} - target is dead")
-            self.dead_zones.append((cx, cy, time.time()))
-            self.stop_cursor_tracking()
-            return False
-        
-        return True
+        else:  # "NONE" or any other state
+            # Try clicking and check if cursor state changes
+            click_mouse('left')
+            self.last_attack_time = time.time()
+            self.attack_count += 1
+            time.sleep(0.1)
+            
+            # Check cursor state again after attack
+            new_cursor_state = self.get_current_cursor_state(cx, cy)
+            if DEBUG: print(f"Cursor state after attack: {new_cursor_state}")
+            
+            if new_cursor_state == "RED_SWORD":
+                # Target is alive - continue attacking
+                return True
+            elif new_cursor_state == "HAND":
+                # Target died and has loot
+                click_mouse('left')  # Pick up the loot
+                time.sleep(0.2)
+                self.dead_zones.append((cx, cy, time.time()))
+                self.stop_cursor_tracking()
+                return False
+            elif new_cursor_state == "PROHIBITED":
+                # Target died or is prohibited
+                self.prohibited_zones.append((cx, cy, time.time()))
+                self.stop_cursor_tracking()
+                return False
+            else:
+                # Can't determine state, assume target is still alive
+                return True
 
     def smooth_rotate_camera(self, total_dx=200, steps=5, delay=0.03):
         press_mouse('right')
@@ -218,6 +249,9 @@ class BotThread(threading.Thread):
             'width': self.window.width,
             'height': self.window.height
         }
+        
+        # Ensure cursor templates are loaded at startup
+        load_templates()
         
         with mss() as sct:
             self.sct = sct

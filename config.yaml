@@ -13,3 +13,9 @@ min_red_area: 20         # Minimum red area to consider valid (lowered for bette
 dead_timeout: 5.0        # How long to remember dead zones
 camera_rotate_time: 0.3  # Time for camera rotation
 click_interval: 0.05     # Interval between clicks when attacking
+
+targeting:
+  templates_dir: "templates"
+  confidence_threshold: 0.7
+  search_timeout: 10
+  attack_interval: 0.5
