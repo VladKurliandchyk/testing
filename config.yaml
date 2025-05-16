@@ -1,0 +1,15 @@
+model_filename: monster_best.pt
+classes: ['boar']
+obstacle_threshold: 50  # или нужное тебе значение
+debug: true
+dead_observe_time: 0.3
+
+# New red detection parameters
+red_check_delay: 0.05    # Delay after click before checking for red
+red_search_time: 0.7     # Total time to search for red after click
+min_red_area: 20         # Minimum red area to consider valid (lowered for better detection)
+
+# Other parameters you might want to add
+dead_timeout: 5.0        # How long to remember dead zones
+camera_rotate_time: 0.3  # Time for camera rotation
+click_interval: 0.05     # Interval between clicks when attacking
